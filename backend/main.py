@@ -58,7 +58,7 @@ def create_app() -> FastAPI:
 def _include_available_routers(app: FastAPI) -> None:
     """Mount routers from api modules when those modules exist."""
 
-    router_modules = ("upload", "knowledge_graph", "integration", "rag", "dialogue", "report", "stats")
+    router_modules = ("upload", "knowledge_graph", "integration", "rag", "dialogue", "report", "stats", "learning")
     for module_name in router_modules:
         try:
             module = importlib.import_module(f"backend.api.{module_name}")

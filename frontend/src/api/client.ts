@@ -232,3 +232,33 @@ export const getReportPDF = async (): Promise<Blob> => {
   if (!res.ok) throw new Error("PDF export failed");
   return res.blob();
 };
+
+export interface DifficultyItem {
+  node_id: string;
+  name: string;
+  difficulty: number;
+  label: string;
+  prerequisite_count: number;
+  frequency: number;
+}
+
+export interface DifficultyAssessment {
+  total: number;
+  by_level: Record<string, number>;
+  items: DifficultyItem[];
+}
+
+export interface LearningPathStep {
+  node_id: string;
+  name: string;
+  step: number;
+}
+
+export interface LearningPath {
+  target: string;
+  path: LearningPathStep[];
+  total_steps: number;
+}
+
+export const getDifficulty = (): Promise<DifficultyAssessment> => request<DifficultyAssessment>("/api/learning/difficulty");
+export const getLearningPath = (target?: string): Promise<LearningPath> => request<LearningPath>(`/api/learning/path${target ? `?target=${encodeURIComponent(target)}` : ""}`);
