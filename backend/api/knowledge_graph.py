@@ -21,9 +21,16 @@ logger = logging.getLogger(__name__)
 _building_tasks: dict[str, bool] = {}
 
 
+async def _process_chapter(chapter, textbook_id: str) -> tuple[list[KnowledgeNode], list[KnowledgeEdge]]:
+    """处理单个章节（提取知识点+关系）"""
+    chapter_nodes = await extract_knowledge_points(chapter.content, chapter.title, textbook_id)
+    chapter_edges = await _extract_relations(chapter_nodes)
+    return chapter_nodes, chapter_edges
+
+
 @router.post("/api/kg/build/{textbook_id}")
 async def build_textbook_kg(textbook_id: str, quick: bool = True) -> dict:
-    """构建知识图谱。quick=True 时只处理前5个有效章节，快速返回。"""
+    """构建知识图谱。quick=True 时只处理前3个有效章节，快速返回。"""
     textbook = await get_textbook(textbook_id)
     if textbook is None:
         raise HTTPException(status_code=404, detail="Textbook not found")
@@ -32,31 +39,31 @@ async def build_textbook_kg(textbook_id: str, quick: bool = True) -> dict:
     valid_chapters = [ch for ch in textbook.chapters if len(ch.content) > 100]
 
     if quick:
-        # 快速模式：只处理前3个章节
         chapters_to_process = valid_chapters[:3]
     else:
-        # 完整模式：处理所有章节（最多20个）
         chapters_to_process = valid_chapters[:20]
+
+    # 并发处理所有章节（大幅提速！）
+    results = await asyncio.gather(
+        *[_process_chapter(ch, textbook.id) for ch in chapters_to_process],
+        return_exceptions=True,
+    )
 
     nodes: list[KnowledgeNode] = []
     edges: list[KnowledgeEdge] = []
-
-    for chapter in chapters_to_process:
-        try:
-            chapter_nodes = await extract_knowledge_points(
-                chapter.content, chapter.title, textbook.id
-            )
-            nodes.extend(chapter_nodes)
-            edges.extend(await _extract_relations(chapter_nodes))
-        except Exception as e:
-            logger.warning("Failed to process chapter %s: %s", chapter.title, e)
+    for result in results:
+        if isinstance(result, Exception):
+            logger.warning("Chapter processing failed: %s", result)
             continue
+        chapter_nodes, chapter_edges = result
+        nodes.extend(chapter_nodes)
+        edges.extend(chapter_edges)
 
     await save_kg_data(textbook.id, nodes, edges)
 
     # 如果是快速模式，启动后台任务继续处理剩余章节
-    if quick and len(valid_chapters) > 5:
-        asyncio.create_task(_build_remaining(textbook.id, valid_chapters[5:30]))
+    if quick and len(valid_chapters) > 3:
+        asyncio.create_task(_build_remaining(textbook.id, valid_chapters[3:20]))
 
     return build_graph(nodes, edges)
 
@@ -68,21 +75,21 @@ async def _build_remaining(textbook_id: str, remaining_chapters: list) -> None:
     _building_tasks[textbook_id] = True
 
     try:
-        # 加载已有的节点和边
         existing_nodes, existing_edges = await get_kg_data(textbook_id)
         nodes = list(existing_nodes)
         edges = list(existing_edges)
 
-        for chapter in remaining_chapters:
-            try:
-                chapter_nodes = await extract_knowledge_points(
-                    chapter.content, chapter.title, textbook_id
-                )
-                nodes.extend(chapter_nodes)
-                edges.extend(await _extract_relations(chapter_nodes))
-            except Exception as e:
-                logger.warning("Background: failed chapter %s: %s", chapter.title, e)
+        # 并发处理
+        results = await asyncio.gather(
+            *[_process_chapter(ch, textbook_id) for ch in remaining_chapters],
+            return_exceptions=True,
+        )
+        for result in results:
+            if isinstance(result, Exception):
                 continue
+            chapter_nodes, chapter_edges = result
+            nodes.extend(chapter_nodes)
+            edges.extend(chapter_edges)
 
         await save_kg_data(textbook_id, nodes, edges)
         logger.info("Background KG build completed for %s: %d nodes", textbook_id, len(nodes))
