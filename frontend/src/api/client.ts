@@ -225,3 +225,10 @@ export interface TokenStats {
 }
 
 export const getTokenStats = (): Promise<TokenStats> => request<TokenStats>("/api/stats/tokens");
+
+export const getReportPDF = async (): Promise<Blob> => {
+  const base = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, "") || "http://localhost:8100";
+  const res = await fetch(`${base}/api/report/pdf`);
+  if (!res.ok) throw new Error("PDF export failed");
+  return res.blob();
+};

@@ -1,4 +1,4 @@
-import type { IntegrationDecision, ReportData, TokenStats } from "../api/client";
+import { getReportPDF, type IntegrationDecision, type ReportData, type TokenStats } from "../api/client";
 
 interface ReportProps {
   report: ReportData | null;
@@ -60,6 +60,20 @@ function exportMarkdown(report: ReportData, tokenStats: TokenStats | null) {
   URL.revokeObjectURL(url);
 }
 
+async function exportPDF() {
+  try {
+    const blob = await getReportPDF();
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "integration_report.pdf";
+    anchor.click();
+    URL.revokeObjectURL(url);
+  } catch {
+    alert("PDF export failed");
+  }
+}
+
 function CaseRow({ item }: { item: IntegrationDecision }) {
   return (
     <tr>
@@ -93,6 +107,9 @@ export function Report({ report, tokenStats, loading, onRefresh }: ReportProps) 
         </button>
         <button className="primary-button" type="button" onClick={() => exportMarkdown(report, tokenStats)}>
           导出 Markdown
+        </button>
+        <button className="secondary-button" type="button" onClick={() => void exportPDF()}>
+          导出 PDF
         </button>
       </div>
 

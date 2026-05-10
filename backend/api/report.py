@@ -9,8 +9,8 @@ from backend.models.database import get_all_textbooks, get_decisions, get_kg_dat
 router = APIRouter()
 
 
-@router.get("/api/report")
-async def integration_report() -> dict:
+async def _generate_report_data() -> dict:
+    """生成整合报告数据"""
     textbooks = await get_all_textbooks()
     decisions = await get_decisions()
     all_nodes = []
@@ -51,3 +51,62 @@ async def integration_report() -> dict:
         },
         "notable_integration_cases": notable,
     }
+
+
+@router.get("/api/report")
+async def integration_report() -> dict:
+    return await _generate_report_data()
+
+
+@router.get("/api/report/pdf")
+async def report_pdf():
+    """导出整合报告为 PDF"""
+    from io import BytesIO
+    from fastapi.responses import StreamingResponse
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    from reportlab.pdfgen import canvas
+
+    report_data = await _generate_report_data()
+
+    buffer = BytesIO()
+    c = canvas.Canvas(buffer, pagesize=A4)
+    _width, height = A4
+    y = height - 30 * mm
+
+    def draw_text(text: str, yy: float, size: int = 10) -> float:
+        c.setFont("Helvetica", size)
+        c.drawString(30 * mm, yy, text)
+        return yy - 5 * mm
+
+    y = draw_text("Medical Textbook Knowledge Integration Report", y, 16)
+    y -= 5 * mm
+    y = draw_text(f"Textbooks: {report_data['original_stats']['total_textbooks']}", y)
+    y = draw_text(f"Original chars: {report_data['original_stats']['total_chars']}", y)
+    y = draw_text(f"Compressed chars: {report_data['compressed_stats']['compressed_chars']}", y)
+    y = draw_text(f"Compression ratio: {report_data['compressed_stats']['compression_ratio']*100:.1f}%", y)
+    y -= 5 * mm
+    y = draw_text("Decision Summary:", y, 12)
+    for action, count in report_data.get("decision_summary", {}).items():
+        y = draw_text(f"  {action}: {count}", y)
+    y -= 5 * mm
+    y = draw_text("Knowledge Graph:", y, 12)
+    y = draw_text(f"  Nodes: {report_data['knowledge_graph_stats']['nodes']}", y)
+    y = draw_text(f"  Edges: {report_data['knowledge_graph_stats']['edges']}", y)
+
+    # Token stats
+    from backend.core.llm.client import get_token_stats
+    stats = get_token_stats().to_dict()
+    y -= 5 * mm
+    y = draw_text("Token Usage:", y, 12)
+    y = draw_text(f"  Total calls: {stats['total_calls']}", y)
+    y = draw_text(f"  Total tokens: {stats['total_tokens']}", y)
+    y = draw_text(f"  Avg latency: {stats['avg_elapsed_ms']:.0f}ms", y)
+
+    c.save()
+    buffer.seek(0)
+    return StreamingResponse(
+        buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": "attachment; filename=integration_report.pdf"},
+    )
