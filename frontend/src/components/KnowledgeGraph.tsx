@@ -1,18 +1,19 @@
 import { useMemo, useState } from "react";
 import ReactECharts from "echarts-for-react";
 import type { EChartsOption } from "echarts";
-import type { KnowledgeEdge, KnowledgeGraphData, KnowledgeNode, Textbook } from "../api/client";
+import type { IntegrationDecision, KnowledgeEdge, KnowledgeGraphData, KnowledgeNode, Textbook } from "../api/client";
 
 interface KnowledgeGraphProps {
   graph: KnowledgeGraphData;
   textbooks: Textbook[];
   loading: boolean;
   integrated: boolean;
+  decisions: IntegrationDecision[];
   onBuildAll: () => Promise<void>;
   onIntegrate: () => Promise<void>;
 }
 
-type ViewMode = "force" | "tree" | "compare";
+type ViewMode = "force" | "tree" | "compare" | "sankey";
 
 const PALETTE = ["#2563eb", "#16a34a", "#d97706", "#dc2626", "#64748b", "#0891b2", "#7c3aed", "#65a30d"];
 const EDGE_LABELS: Record<string, string> = {
@@ -54,7 +55,7 @@ function makeTree(nodes: KnowledgeNode[], textbooks: Textbook[]) {
   };
 }
 
-export function KnowledgeGraph({ graph, textbooks, loading, integrated, onBuildAll, onIntegrate }: KnowledgeGraphProps) {
+export function KnowledgeGraph({ graph, textbooks, loading, integrated, decisions, onBuildAll, onIntegrate }: KnowledgeGraphProps) {
   const [selectedNode, setSelectedNode] = useState<KnowledgeNode | null>(null);
   const [search, setSearch] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("force");
@@ -200,7 +201,55 @@ export function KnowledgeGraph({ graph, textbooks, loading, integrated, onBuildA
     };
   }, [colors, graph.nodes, integrated]);
 
-  const option = viewMode === "tree" ? treeOption : viewMode === "compare" ? compareOption : graphOption;
+  const sankeyOption: EChartsOption = useMemo(() => {
+    // 桑基图：展示整合前知识点如何合并
+    const mergeDecisions = decisions.filter((d) => d.action === "merge");
+    if (mergeDecisions.length === 0) {
+      return {
+        backgroundColor: "transparent",
+        title: { text: "暂无整合决策，请先执行整合", left: "center", top: "center", textStyle: { color: "#999", fontSize: 14 } },
+        series: [],
+      };
+    }
+
+    // 收集所有涉及的节点名
+    const allNames = new Set<string>();
+    mergeDecisions.forEach((d) => {
+      d.affected_nodes.forEach((n) => allNames.add(n));
+      allNames.add(d.result_node);
+    });
+
+    // 左侧：整合前节点（affected_nodes）
+    // 右侧：整合后节点（result_node）
+    const sankeyNodes = Array.from(allNames).map((name) => ({ name }));
+    const sankeyLinks = mergeDecisions.flatMap((d) =>
+      d.affected_nodes.map((src) => ({
+        source: src,
+        target: d.result_node,
+        value: 1,
+      }))
+    );
+
+    return {
+      backgroundColor: "transparent",
+      tooltip: { trigger: "item", backgroundColor: "#fff", borderColor: "#e5e5e0", textStyle: { color: "#333" } },
+      series: [
+        {
+          type: "sankey",
+          layout: "none",
+          emphasis: { focus: "adjacency" },
+          nodeAlign: "left",
+          orient: "horizontal",
+          label: { color: "#333", fontSize: 11 },
+          lineStyle: { color: "gradient", opacity: 0.35 },
+          data: sankeyNodes,
+          links: sankeyLinks,
+        },
+      ],
+    };
+  }, [decisions]);
+
+  const option = viewMode === "tree" ? treeOption : viewMode === "compare" ? compareOption : viewMode === "sankey" ? sankeyOption : graphOption;
 
   const handleChartClick = (params: { data?: { id?: string } }) => {
     if (params.data?.id) {
@@ -227,6 +276,9 @@ export function KnowledgeGraph({ graph, textbooks, loading, integrated, onBuildA
             </button>
             <button className={viewMode === "compare" ? "active" : ""} type="button" onClick={() => setViewMode("compare")}>
               对比
+            </button>
+            <button className={viewMode === "sankey" ? "active" : ""} type="button" onClick={() => setViewMode("sankey")}>
+              桑基
             </button>
           </div>
           <button className="secondary-button" type="button" disabled={loading} onClick={() => void onBuildAll()}>

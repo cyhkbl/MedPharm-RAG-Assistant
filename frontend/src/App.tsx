@@ -302,6 +302,7 @@ function App() {
           textbooks={textbooks}
           loading={graphLoading}
           integrated={integrated}
+          decisions={decisions}
           onBuildAll={handleBuildAll}
           onIntegrate={handleIntegrate}
         />

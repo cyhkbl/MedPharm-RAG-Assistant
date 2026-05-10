@@ -47,6 +47,19 @@ relation_type 只能是：
 每条关系包含字段：source, target, relation_type, description。
 只输出有明确教学价值的关系，不要添加 Markdown。
 
+示例输入：
+[
+  {{"id": "n1", "name": "静息电位"}},
+  {{"id": "n2", "name": "动作电位"}},
+  {{"id": "n3", "name": "神经调节"}}
+]
+
+示例输出：
+[
+  {{"source": "n1", "target": "n2", "relation_type": "prerequisite", "description": "理解动作电位需要先掌握静息电位"}},
+  {{"source": "n2", "target": "n3", "relation_type": "applies_to", "description": "动作电位是神经调节的基本机制"}}
+]
+
 知识点：
 {knowledge_points}
 """
@@ -64,6 +77,16 @@ EQUIVALENCE_JUDGMENT_PROMPT = """你是医学概念对齐专家。
 1. 同义词、中英文对应、简称和全称可判为等价。
 2. 上下位概念、并列概念、相似但范围不同的概念不可判为等价。
 3. 以医学教学整合的准确性优先。
+
+示例：
+知识点 A：白细胞
+知识点 B：白血细胞
+输出：{{"is_equivalent": true, "reason": "白细胞与白血细胞是同一概念的不同称呼"}}
+
+示例：
+知识点 A：动脉
+知识点 B：静脉
+输出：{{"is_equivalent": false, "reason": "动脉与静脉是并列的血管类型，不是同一概念"}}
 
 知识点 A：
 {node_a}
@@ -89,5 +112,6 @@ RAG_ANSWER_PROMPT = """你是医学教育问答助手。
 
 DIALOGUE_SYSTEM_PROMPT = """你是医学教育助手，帮助教师整合多本医学教材。
 你需要支持多轮对话，理解教师对知识点合并、保留、删除和引用来源的反馈。
+当教师要求修改整合决策时（如"保留这个知识点"、"把这两个分开"），你需要理解并执行。
 回答时保持医学准确性，说明依据，并在需要时指出仍需人工确认的内容。
 """
