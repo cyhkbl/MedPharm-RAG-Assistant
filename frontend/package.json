@@ -1,0 +1,27 @@
+{
+  "name": "medpharm-rag-assistant-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 8200",
+    "build": "tsc -b && vite build",
+    "lint": "eslint .",
+    "preview": "vite preview --host 0.0.0.0 --port 8200"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "latest",
+    "echarts": "latest",
+    "echarts-for-react": "latest",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "latest",
+    "vite": "latest"
+  },
+  "devDependencies": {
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "eslint": "latest",
+    "typescript-eslint": "latest"
+  }
+}

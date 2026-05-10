@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+venv/
+env/
+
+# Data files (教材不上传)
+data/textbooks/*.pdf
+data/textbooks/*.docx
+data/textbooks/*.txt
+data/textbooks/*.md
+*.pdf
+data/parsed/
+data/kg/
+data/vectors/
+
+# Node
+node_modules/
+frontend/node_modules/
+frontend/dist/
+.next/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.local
+.env.production
+
+# Logs
+*.log
+
+# ChromaDB
+chroma_db/
