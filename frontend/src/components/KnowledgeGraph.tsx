@@ -14,7 +14,7 @@ interface KnowledgeGraphProps {
 
 type ViewMode = "force" | "tree" | "compare";
 
-const PALETTE = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#f97316", "#84cc16"];
+const PALETTE = ["#2563eb", "#16a34a", "#d97706", "#dc2626", "#64748b", "#0891b2", "#7c3aed", "#65a30d"];
 const EDGE_LABELS: Record<string, string> = {
   prerequisite: "前置",
   parallel: "并列",
@@ -79,14 +79,12 @@ export function KnowledgeGraph({ graph, textbooks, loading, integrated, onBuildA
         draggable: true,
         itemStyle: {
           color: colors[node.textbook_id] || "#64748b",
-          borderColor: matched ? "#f8fafc" : "rgba(255,255,255,0.28)",
-          borderWidth: matched ? 4 : 1,
-          shadowBlur: matched ? 22 : 8,
-          shadowColor: matched ? "#3b82f6" : "rgba(59,130,246,0.18)",
+          borderColor: matched ? "#2563eb" : "#ffffff",
+          borderWidth: matched ? 3 : 1,
         },
         label: {
           show: matched || node.frequency > 1,
-          color: "#e5edf8",
+          color: "#333333",
           fontSize: 11,
         },
       };
@@ -96,9 +94,9 @@ export function KnowledgeGraph({ graph, textbooks, loading, integrated, onBuildA
       backgroundColor: "transparent",
       tooltip: {
         trigger: "item",
-        backgroundColor: "#101827",
-        borderColor: "#263449",
-        textStyle: { color: "#e5edf8" },
+        backgroundColor: "#ffffff",
+        borderColor: "#e5e5e0",
+        textStyle: { color: "#333333" },
         formatter: (params: unknown) => {
           const data = (params as { data?: { id?: string; source?: string; target?: string; name?: string } }).data;
           if (data?.id) {
@@ -112,7 +110,7 @@ export function KnowledgeGraph({ graph, textbooks, loading, integrated, onBuildA
         data: textbooks.map((item) => item.title || item.filename),
         top: 4,
         left: 10,
-        textStyle: { color: "#9fb0c6", fontSize: 11 },
+        textStyle: { color: "#666666", fontSize: 11 },
       },
       series: [
         {
@@ -129,9 +127,9 @@ export function KnowledgeGraph({ graph, textbooks, loading, integrated, onBuildA
             target: edge.target,
             value: 1,
             lineStyle: {
-              color: edge.relation_type === "contains" ? "#10b981" : edge.relation_type === "prerequisite" ? "#f59e0b" : "#64748b",
+              color: edge.relation_type === "contains" ? "#16a34a" : edge.relation_type === "prerequisite" ? "#d97706" : "#999999",
               width: edge.relation_type === "contains" ? 1.8 : 1,
-              opacity: 0.45,
+              opacity: 0.55,
             },
           })),
           force: {
@@ -150,7 +148,7 @@ export function KnowledgeGraph({ graph, textbooks, loading, integrated, onBuildA
   const treeOption: EChartsOption = useMemo(
     () => ({
       backgroundColor: "transparent",
-      tooltip: { trigger: "item", backgroundColor: "#101827", borderColor: "#263449", textStyle: { color: "#e5edf8" } },
+      tooltip: { trigger: "item", backgroundColor: "#ffffff", borderColor: "#e5e5e0", textStyle: { color: "#333333" } },
       series: [
         {
           type: "tree",
@@ -161,9 +159,9 @@ export function KnowledgeGraph({ graph, textbooks, loading, integrated, onBuildA
           right: "18%",
           symbolSize: 9,
           roam: true,
-          label: { color: "#d8e4f5", fontSize: 11, position: "left", verticalAlign: "middle", align: "right" },
+          label: { color: "#333333", fontSize: 11, position: "left", verticalAlign: "middle", align: "right" },
           leaves: { label: { position: "right", align: "left" } },
-          lineStyle: { color: "#334155", width: 1.2 },
+          lineStyle: { color: "#d4d4cf", width: 1.2 },
           expandAndCollapse: true,
           initialTreeDepth: 2,
           animationDuration: 450,
@@ -187,7 +185,7 @@ export function KnowledgeGraph({ graph, textbooks, loading, integrated, onBuildA
         name: node.name,
         symbolSize: Math.min(54, 16 + node.frequency * 7),
         itemStyle: { color: colors[node.textbook_id] || "#64748b" },
-        label: { show: node.frequency > 1, color: "#d8e4f5", fontSize: 10 },
+        label: { show: node.frequency > 1, color: "#333333", fontSize: 10 },
       })),
       links: [],
       force: { repulsion: 130, gravity: 0.12 },
@@ -195,8 +193,8 @@ export function KnowledgeGraph({ graph, textbooks, loading, integrated, onBuildA
     return {
       backgroundColor: "transparent",
       title: [
-        { text: "整合前", left: "23%", top: 12, textStyle: { color: "#cbd5e1", fontSize: 13 } },
-        { text: integrated ? "整合后" : "待整合预览", left: "72%", top: 12, textStyle: { color: "#cbd5e1", fontSize: 13 } },
+        { text: "整合前", left: "23%", top: 12, textStyle: { color: "#333333", fontSize: 13 } },
+        { text: integrated ? "整合后" : "待整合预览", left: "72%", top: 12, textStyle: { color: "#333333", fontSize: 13 } },
       ],
       series: [toSeries(beforeNodes, ["25%", "54%"], "before"), toSeries(afterNodes, ["74%", "54%"], "after")],
     };

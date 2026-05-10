@@ -65,7 +65,7 @@ export function IntegrationPanel({ decisions, stats, loading, onRun, onOverride 
               <small>影响节点：{decision.affected_nodes.join("、")}</small>
               <div className="override-row">
                 {(["merge", "keep", "remove"] as DecisionAction[]).map((action) => (
-                  <button key={action} type="button" onClick={() => void onOverride(decision.decision_id, action)}>
+                  <button className={action} key={action} type="button" onClick={() => void onOverride(decision.decision_id, action)}>
                     改为{ACTION_TEXT[action]}
                   </button>
                 ))}

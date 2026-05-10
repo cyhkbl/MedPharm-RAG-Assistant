@@ -31,7 +31,8 @@ async def extract_knowledge_points(
                 continue
             item.setdefault("id", _node_id(textbook_name, chapter_title, index, str(item.get("name", ""))))
             item.setdefault("chapter", chapter_title)
-            item.setdefault("page", 1)
+            if not item.get("page"):
+                item["page"] = 1
             item["textbook_id"] = textbook_name
             try:
                 nodes.append(KnowledgeNode.model_validate(item))

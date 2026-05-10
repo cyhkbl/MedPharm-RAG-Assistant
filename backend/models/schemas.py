@@ -33,7 +33,7 @@ class KnowledgeNode(BaseModel):
     definition: str
     category: str
     chapter: str
-    page: int
+    page: int | None = None
     textbook_id: str
     frequency: int = 1
 

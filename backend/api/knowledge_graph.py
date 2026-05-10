@@ -16,14 +16,16 @@ router = APIRouter()
 
 
 @router.post("/api/kg/build/{textbook_id}")
-async def build_textbook_kg(textbook_id: str) -> dict:
+async def build_textbook_kg(textbook_id: str, max_chapters: int = 30) -> dict:
     textbook = await get_textbook(textbook_id)
     if textbook is None:
         raise HTTPException(status_code=404, detail="Textbook not found")
 
     nodes: list[KnowledgeNode] = []
     edges: list[KnowledgeEdge] = []
-    for chapter in textbook.chapters:
+    # 限制处理章节数量，避免超时
+    chapters_to_process = [ch for ch in textbook.chapters if len(ch.content) > 100][:max_chapters]
+    for chapter in chapters_to_process:
         chapter_nodes = await extract_knowledge_points(chapter.content, chapter.title, textbook.id)
         nodes.extend(chapter_nodes)
         edges.extend(await _extract_relations(chapter_nodes))

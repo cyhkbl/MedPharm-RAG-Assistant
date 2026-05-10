@@ -21,14 +21,14 @@ KNOWLEDGE_EXTRACTION_PROMPT = """你是医学教材知识图谱抽取专家。
 
 示例输出：
 [
-  {
+  {{
     "id": "pathology_ch1_001",
     "name": "炎症",
     "definition": "具有血管系统的活体组织对损伤因子所发生的防御反应。",
     "category": "病理变化",
     "chapter": "第一章 绪论",
     "page": 3
-  }
+  }}
 ]
 
 待抽取章节：
@@ -55,10 +55,10 @@ EQUIVALENCE_JUDGMENT_PROMPT = """你是医学概念对齐专家。
 请判断两个知识点是否指向同一医学概念或可合并的同义概念。
 
 输出严格为 JSON 对象：
-{
+{{
   "is_equivalent": true 或 false,
   "reason": "判断理由"
-}
+}}
 
 判断标准：
 1. 同义词、中英文对应、简称和全称可判为等价。
