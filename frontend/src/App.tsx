@@ -7,6 +7,8 @@ import {
   getHistory,
   getRAGStatus,
   getReport,
+  getTokenStats,
+  type TokenStats,
   getStats,
   getTextbooks,
   indexRAG,
@@ -82,6 +84,7 @@ function App() {
   const [dialogueMessages, setDialogueMessages] = useState<ChatMessage[]>([]);
   const [conversationId, setConversationId] = useState<string | undefined>();
   const [report, setReport] = useState<ReportData | null>(null);
+  const [tokenStats, setTokenStats] = useState<TokenStats | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>("integration");
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -192,6 +195,7 @@ function App() {
       setDecisions(result.decisions);
       setStats(await getStats());
       setReport(await getReport().catch(() => null));
+      setTokenStats(await getTokenStats().catch(() => null));
       showToast("跨教材整合完成", "success");
     } catch (error) {
       showToast(`整合失败：${errorMessage(error)}`, "error");
@@ -256,6 +260,7 @@ function App() {
     setPanelLoading(true);
     try {
       setReport(await getReport());
+      setTokenStats(await getTokenStats().catch(() => null));
       showToast("报告已更新", "success");
     } catch (error) {
       showToast(`报告生成失败：${errorMessage(error)}`, "error");
@@ -282,7 +287,7 @@ function App() {
     if (activeTab === "dialogue") {
       return <Dialogue messages={dialogueMessages} loading={panelLoading} onSend={handleDialogue} />;
     }
-    return <Report report={report} loading={panelLoading} onRefresh={handleReport} />;
+    return <Report report={report} tokenStats={tokenStats} loading={panelLoading} onRefresh={handleReport} />;
   }, [activeTab, decisions, dialogueMessages, panelLoading, ragHistory, ragStatus, report, stats]);
 
   return (

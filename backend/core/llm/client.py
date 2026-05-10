@@ -4,6 +4,7 @@ import asyncio
 import logging
 import time
 from collections.abc import Sequence
+from dataclasses import dataclass, field
 from typing import Any
 
 from openai import APIError, APIStatusError, APITimeoutError, AsyncOpenAI, RateLimitError
@@ -13,8 +14,58 @@ from backend.config import get_settings
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class TokenStats:
+    """Token 消耗统计"""
+    total_calls: int = 0
+    total_input_tokens: int = 0
+    total_output_tokens: int = 0
+    total_reasoning_tokens: int = 0
+    total_elapsed_ms: float = 0.0
+    errors: int = 0
+    by_model: dict[str, dict[str, int]] = field(default_factory=dict)
+
+    def record(self, model: str, input_tokens: int, output_tokens: int, reasoning_tokens: int, elapsed_ms: float) -> None:
+        self.total_calls += 1
+        self.total_input_tokens += input_tokens
+        self.total_output_tokens += output_tokens
+        self.total_reasoning_tokens += reasoning_tokens
+        self.total_elapsed_ms += elapsed_ms
+        if model not in self.by_model:
+            self.by_model[model] = {"calls": 0, "input": 0, "output": 0, "reasoning": 0}
+        self.by_model[model]["calls"] += 1
+        self.by_model[model]["input"] += input_tokens
+        self.by_model[model]["output"] += output_tokens
+        self.by_model[model]["reasoning"] += reasoning_tokens
+
+    def record_error(self) -> None:
+        self.errors += 1
+
+    def to_dict(self) -> dict:
+        return {
+            "total_calls": self.total_calls,
+            "total_input_tokens": self.total_input_tokens,
+            "total_output_tokens": self.total_output_tokens,
+            "total_reasoning_tokens": self.total_reasoning_tokens,
+            "total_tokens": self.total_input_tokens + self.total_output_tokens + self.total_reasoning_tokens,
+            "total_elapsed_ms": round(self.total_elapsed_ms, 1),
+            "avg_elapsed_ms": round(self.total_elapsed_ms / max(self.total_calls, 1), 1),
+            "errors": self.errors,
+            "by_model": self.by_model,
+        }
+
+
+# 全局 token 统计
+_token_stats = TokenStats()
+
+
+def get_token_stats() -> TokenStats:
+    """获取全局 token 统计"""
+    return _token_stats
+
+
 class LLMClient:
-    """Async LiteLLM-compatible client."""
+    """Async LiteLLM-compatible client with token tracking."""
 
     def __init__(self) -> None:
         settings = get_settings()
@@ -31,7 +82,7 @@ class LLMClient:
         temperature: float = 0.3,
         max_tokens: int = 4000,
     ) -> str:
-        """Call chat completion with retry and timing logs."""
+        """Call chat completion with retry, timing, and token tracking."""
 
         selected_model = model or self.default_model
         last_error: Exception | None = None
@@ -45,13 +96,23 @@ class LLMClient:
                     temperature=temperature,
                     max_tokens=max_tokens,
                 )
-                elapsed = time.perf_counter() - start_time
+                elapsed_ms = (time.perf_counter() - start_time) * 1000
+
+                # 记录 token 消耗
+                usage = response.usage
+                input_tokens = usage.prompt_tokens if usage else 0
+                output_tokens = usage.completion_tokens if usage else 0
+                reasoning_tokens = 0
+                if usage and hasattr(usage, 'completion_tokens_details') and usage.completion_tokens_details:
+                    reasoning_tokens = getattr(usage.completion_tokens_details, 'reasoning_tokens', 0) or 0
+
+                _token_stats.record(selected_model, input_tokens, output_tokens, reasoning_tokens, elapsed_ms)
+
                 logger.info(
-                    "LLM call succeeded model=%s attempt=%s elapsed=%.2fs",
-                    selected_model,
-                    attempt,
-                    elapsed,
+                    "LLM call model=%s attempt=%s elapsed=%.0fms tokens=%d+%d+%d",
+                    selected_model, attempt, elapsed_ms, input_tokens, output_tokens, reasoning_tokens,
                 )
+
                 msg = response.choices[0].message
                 content = msg.content
                 # 推理模型（如 mimo-v2.5-pro）可能把内容放在 reasoning_content 中
@@ -59,14 +120,12 @@ class LLMClient:
                     content = msg.reasoning_content
                 return content or ""
             except (APIError, APIStatusError, APITimeoutError, RateLimitError) as error:
-                elapsed = time.perf_counter() - start_time
+                elapsed_ms = (time.perf_counter() - start_time) * 1000
                 last_error = error
+                _token_stats.record_error()
                 logger.warning(
-                    "LLM call failed model=%s attempt=%s elapsed=%.2fs error=%s",
-                    selected_model,
-                    attempt,
-                    elapsed,
-                    error,
+                    "LLM call failed model=%s attempt=%s elapsed=%.0fms error=%s",
+                    selected_model, attempt, elapsed_ms, error,
                 )
                 if attempt < 3:
                     await asyncio.sleep(2 ** (attempt - 1))

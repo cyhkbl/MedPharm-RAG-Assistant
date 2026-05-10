@@ -211,3 +211,17 @@ export const getHistory = (conversationId?: string): Promise<{ conversation_id?:
 };
 
 export const getReport = (): Promise<ReportData> => request<ReportData>("/api/report");
+
+export interface TokenStats {
+  total_calls: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_reasoning_tokens: number;
+  total_tokens: number;
+  total_elapsed_ms: number;
+  avg_elapsed_ms: number;
+  errors: number;
+  by_model: Record<string, { calls: number; input: number; output: number; reasoning: number }>;
+}
+
+export const getTokenStats = (): Promise<TokenStats> => request<TokenStats>("/api/stats/tokens");
