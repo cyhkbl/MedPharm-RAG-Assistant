@@ -20,7 +20,7 @@ async def extract_knowledge_points(
 ) -> list[KnowledgeNode]:
     """Extract knowledge nodes from one chapter via LLM."""
 
-    content = truncate_to_tokens(chapter_content, 3000)
+    content = truncate_to_tokens(chapter_content, 2000)
     prompt = KNOWLEDGE_EXTRACTION_PROMPT.format(chapter_content=f"教材：{textbook_name}\n章节：{chapter_title}\n内容：\n{content}")
     try:
         raw = await chat_completion([{"role": "user", "content": prompt}], temperature=0.1, max_tokens=2000)
