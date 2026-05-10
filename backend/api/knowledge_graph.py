@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import re
 
 from fastapi import APIRouter, HTTPException
@@ -13,24 +15,91 @@ from backend.models.database import get_all_textbooks, get_kg_data, get_textbook
 from backend.models.schemas import KnowledgeEdge, KnowledgeNode
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+# 后台任务队列：记录正在构建的教材
+_building_tasks: dict[str, bool] = {}
 
 
 @router.post("/api/kg/build/{textbook_id}")
-async def build_textbook_kg(textbook_id: str, max_chapters: int = 30) -> dict:
+async def build_textbook_kg(textbook_id: str, quick: bool = True) -> dict:
+    """构建知识图谱。quick=True 时只处理前5个有效章节，快速返回。"""
     textbook = await get_textbook(textbook_id)
     if textbook is None:
         raise HTTPException(status_code=404, detail="Textbook not found")
 
+    # 筛选有效章节（内容 > 100 字）
+    valid_chapters = [ch for ch in textbook.chapters if len(ch.content) > 100]
+
+    if quick:
+        # 快速模式：只处理前3个章节
+        chapters_to_process = valid_chapters[:3]
+    else:
+        # 完整模式：处理所有章节（最多20个）
+        chapters_to_process = valid_chapters[:20]
+
     nodes: list[KnowledgeNode] = []
     edges: list[KnowledgeEdge] = []
-    # 限制处理章节数量，避免超时
-    chapters_to_process = [ch for ch in textbook.chapters if len(ch.content) > 100][:max_chapters]
+
     for chapter in chapters_to_process:
-        chapter_nodes = await extract_knowledge_points(chapter.content, chapter.title, textbook.id)
-        nodes.extend(chapter_nodes)
-        edges.extend(await _extract_relations(chapter_nodes))
+        try:
+            chapter_nodes = await extract_knowledge_points(
+                chapter.content, chapter.title, textbook.id
+            )
+            nodes.extend(chapter_nodes)
+            edges.extend(await _extract_relations(chapter_nodes))
+        except Exception as e:
+            logger.warning("Failed to process chapter %s: %s", chapter.title, e)
+            continue
+
     await save_kg_data(textbook.id, nodes, edges)
+
+    # 如果是快速模式，启动后台任务继续处理剩余章节
+    if quick and len(valid_chapters) > 5:
+        asyncio.create_task(_build_remaining(textbook.id, valid_chapters[5:30]))
+
     return build_graph(nodes, edges)
+
+
+async def _build_remaining(textbook_id: str, remaining_chapters: list) -> None:
+    """后台处理剩余章节"""
+    if _building_tasks.get(textbook_id):
+        return
+    _building_tasks[textbook_id] = True
+
+    try:
+        # 加载已有的节点和边
+        existing_nodes, existing_edges = await get_kg_data(textbook_id)
+        nodes = list(existing_nodes)
+        edges = list(existing_edges)
+
+        for chapter in remaining_chapters:
+            try:
+                chapter_nodes = await extract_knowledge_points(
+                    chapter.content, chapter.title, textbook_id
+                )
+                nodes.extend(chapter_nodes)
+                edges.extend(await _extract_relations(chapter_nodes))
+            except Exception as e:
+                logger.warning("Background: failed chapter %s: %s", chapter.title, e)
+                continue
+
+        await save_kg_data(textbook_id, nodes, edges)
+        logger.info("Background KG build completed for %s: %d nodes", textbook_id, len(nodes))
+    finally:
+        _building_tasks.pop(textbook_id, None)
+
+
+@router.get("/api/kg/build-status/{textbook_id}")
+async def build_status(textbook_id: str) -> dict:
+    """查询知识图谱构建状态"""
+    is_building = _building_tasks.get(textbook_id, False)
+    nodes, edges = await get_kg_data(textbook_id)
+    return {
+        "is_building": is_building,
+        "node_count": len(nodes),
+        "edge_count": len(edges),
+    }
 
 
 @router.get("/api/kg/all")
@@ -57,7 +126,7 @@ async def _extract_relations(nodes: list[KnowledgeNode]) -> list[KnowledgeEdge]:
         knowledge_points=json.dumps([node.model_dump(mode="json") for node in nodes], ensure_ascii=False)
     )
     try:
-        raw = await chat_completion([{"role": "user", "content": prompt}], temperature=0.1, max_tokens=1800)
+        raw = await chat_completion([{"role": "user", "content": prompt}], temperature=0.1, max_tokens=2000)
         payload = _json_array(raw)
         edges: list[KnowledgeEdge] = []
         for item in payload:

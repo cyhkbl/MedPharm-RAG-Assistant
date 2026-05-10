@@ -52,7 +52,12 @@ class LLMClient:
                     attempt,
                     elapsed,
                 )
-                return response.choices[0].message.content or ""
+                msg = response.choices[0].message
+                content = msg.content
+                # 推理模型（如 mimo-v2.5-pro）可能把内容放在 reasoning_content 中
+                if not content and hasattr(msg, "reasoning_content"):
+                    content = msg.reasoning_content
+                return content or ""
             except (APIError, APIStatusError, APITimeoutError, RateLimitError) as error:
                 elapsed = time.perf_counter() - start_time
                 last_error = error
