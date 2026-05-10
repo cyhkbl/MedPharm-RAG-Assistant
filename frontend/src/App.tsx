@@ -34,8 +34,9 @@ import { KnowledgeGraph } from "./components/KnowledgeGraph";
 import { RAGChat } from "./components/RAGChat";
 import { Report } from "./components/Report";
 import { LearningPanel } from "./components/LearningPanel";
+import { TeachingPanel } from "./components/TeachingPanel";
 
-type TabKey = "integration" | "rag" | "dialogue" | "report" | "learning";
+type TabKey = "integration" | "rag" | "dialogue" | "report" | "learning" | "teaching";
 type ToastKind = "success" | "error" | "info";
 
 interface Toast {
@@ -50,6 +51,7 @@ const TABS: Array<{ key: TabKey; label: string }> = [
   { key: "dialogue", label: "对话" },
   { key: "report", label: "报告" },
   { key: "learning", label: "学习" },
+  { key: "teaching", label: "教学" },
 ];
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; message: string }> {
@@ -298,6 +300,9 @@ function App() {
     }
     if (activeTab === "learning") {
       return <LearningPanel />;
+    }
+    if (activeTab === "teaching") {
+      return <TeachingPanel />;
     }
     return <Report report={report} tokenStats={tokenStats} loading={panelLoading} onRefresh={handleReport} />;
   }, [activeTab, decisions, dialogueMessages, panelLoading, ragHistory, ragStatus, report, stats]);
