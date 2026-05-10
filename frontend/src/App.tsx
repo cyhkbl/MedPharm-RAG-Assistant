@@ -251,6 +251,13 @@ function App() {
       const response = await sendChat(message, conversationId);
       setConversationId(response.conversation_id);
       setDialogueMessages((current) => [...current, { role: "assistant", content: response.message, timestamp: response.timestamp }]);
+      // 如果对话修改了整合决策，刷新图谱和决策列表
+      if (response.message.includes("已将决策")) {
+        setDecisions(await getDecisions());
+        setStats(await getStats());
+        setGraph(await getAllKG());
+        showToast("决策已更新，图谱已刷新", "success");
+      }
     } catch (error) {
       showToast(`对话失败：${errorMessage(error)}`, "error");
     } finally {
