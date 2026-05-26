@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -12,6 +13,9 @@ from openai import APIError, APIStatusError, APITimeoutError, AsyncOpenAI, RateL
 from backend.config import get_settings
 
 logger = logging.getLogger(__name__)
+
+# Global concurrency limiter: max 5 concurrent LLM calls
+_semaphore = asyncio.Semaphore(5)
 
 
 @dataclass
@@ -65,7 +69,7 @@ def get_token_stats() -> TokenStats:
 
 
 class LLMClient:
-    """Async LiteLLM-compatible client with token tracking."""
+    """Async LiteLLM-compatible client with concurrency control and smart retry."""
 
     def __init__(self) -> None:
         settings = get_settings()
@@ -82,8 +86,18 @@ class LLMClient:
         temperature: float = 0.3,
         max_tokens: int = 4000,
     ) -> str:
-        """Call chat completion with retry, timing, and token tracking."""
+        """Call chat completion with concurrency control, smart retry, and token tracking."""
 
+        async with _semaphore:
+            return await self._call_with_retry(messages, model, temperature, max_tokens)
+
+    async def _call_with_retry(
+        self,
+        messages: Sequence[dict[str, str]],
+        model: str | None,
+        temperature: float,
+        max_tokens: int,
+    ) -> str:
         selected_model = model or self.default_model
         last_error: Exception | None = None
 
@@ -98,7 +112,6 @@ class LLMClient:
                 )
                 elapsed_ms = (time.perf_counter() - start_time) * 1000
 
-                # 记录 token 消耗
                 usage = response.usage
                 input_tokens = usage.prompt_tokens if usage else 0
                 output_tokens = usage.completion_tokens if usage else 0
@@ -119,7 +132,37 @@ class LLMClient:
                 if not content and hasattr(msg, "reasoning_content"):
                     content = msg.reasoning_content
                 return content or ""
-            except (APIError, APIStatusError, APITimeoutError, RateLimitError) as error:
+            except RateLimitError as error:
+                # 429: rate limited — longer backoff with jitter
+                elapsed_ms = (time.perf_counter() - start_time) * 1000
+                last_error = error
+                _token_stats.record_error()
+                logger.warning(
+                    "LLM rate-limited model=%s attempt=%s elapsed=%.0fms",
+                    selected_model, attempt, elapsed_ms,
+                )
+                if attempt < 3:
+                    backoff = 2 ** (attempt + 1) + random.uniform(0, 1)
+                    await asyncio.sleep(backoff)
+            except APIStatusError as error:
+                elapsed_ms = (time.perf_counter() - start_time) * 1000
+                last_error = error
+                _token_stats.record_error()
+                # 4xx client errors (except 429): don't retry
+                if 400 <= error.status_code < 500:
+                    logger.error(
+                        "LLM client error model=%s status=%s — not retrying",
+                        selected_model, error.status_code,
+                    )
+                    raise
+                # 5xx server errors: quick retry
+                logger.warning(
+                    "LLM server error model=%s attempt=%s status=%s elapsed=%.0fms",
+                    selected_model, attempt, error.status_code, elapsed_ms,
+                )
+                if attempt < 3:
+                    await asyncio.sleep(1.0 + random.uniform(0, 0.5))
+            except (APIError, APITimeoutError) as error:
                 elapsed_ms = (time.perf_counter() - start_time) * 1000
                 last_error = error
                 _token_stats.record_error()
@@ -128,7 +171,7 @@ class LLMClient:
                     selected_model, attempt, elapsed_ms, error,
                 )
                 if attempt < 3:
-                    await asyncio.sleep(2 ** (attempt - 1))
+                    await asyncio.sleep(2 ** (attempt - 1) + random.uniform(0, 0.5))
 
         assert last_error is not None
         raise last_error

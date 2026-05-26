@@ -1,6 +1,8 @@
-# MedPharm RAG Assistant
+# MedDistill
 
-医学教材知识整合智能体：将 7 本教材压缩到 30% 精华，并提供基于教材来源的 RAG 精准问答。
+将厚重医学教材蒸馏为 30% 精华知识，基于知识图谱与 RAG 实现精准问答。
+
+> **MedDistill** — Medical + Distill，将 7 本教材蒸馏压缩，保留核心知识点，提供带引用的智能问答。
 
 ## 功能特性
 
@@ -39,7 +41,8 @@
 ### 1. 克隆并进入项目
 
 ```bash
-cd /home/henry/tempprojects/hackathlon
+git clone https://github.com/cyhkbl/MedDistill.git
+cd MedDistill
 ```
 
 ### 2. 安装后端依赖
@@ -147,7 +150,7 @@ FRONTEND_URL=http://localhost:8200
 ## 项目结构
 
 ```text
-hackathlon/
+MedDistill/
 ├── backend/
 │   ├── main.py                  # FastAPI 入口
 │   ├── config.py                # 环境变量配置

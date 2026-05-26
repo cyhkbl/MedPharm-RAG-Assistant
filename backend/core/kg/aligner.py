@@ -51,12 +51,46 @@ async def _verify_equivalence(node_a: KnowledgeNode, node_b: KnowledgeNode) -> b
 
 
 def _json_object(text: str) -> dict:
+    """Extract JSON object from LLM output with robust fallback parsing."""
     stripped = text.strip()
+    # Remove markdown code fences
     if stripped.startswith("```"):
         stripped = re.sub(r"^```(?:json)?\s*|\s*```$", "", stripped, flags=re.DOTALL)
+        stripped = stripped.strip()
+
+    # Attempt 1: direct parse
     try:
         payload = json.loads(stripped)
+        if isinstance(payload, dict):
+            return payload
     except json.JSONDecodeError:
-        match = re.search(r"\{[\s\S]*\}", stripped)
-        payload = json.loads(match.group(0)) if match else {}
-    return payload if isinstance(payload, dict) else {}
+        pass
+
+    # Attempt 2: find outermost {...} using brace matching
+    start = stripped.find("{")
+    if start != -1:
+        depth = 0
+        for i in range(start, len(stripped)):
+            if stripped[i] == "{":
+                depth += 1
+            elif stripped[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        payload = json.loads(stripped[start : i + 1])
+                        if isinstance(payload, dict):
+                            return payload
+                    except json.JSONDecodeError:
+                        pass
+                    break
+
+    # Attempt 3: fix trailing commas
+    try:
+        fixed = re.sub(r",\s*([}\]])", r"\1", stripped[start:] if start != -1 else stripped)
+        payload = json.loads(fixed)
+        if isinstance(payload, dict):
+            return payload
+    except (json.JSONDecodeError, UnboundLocalError):
+        pass
+
+    return {}

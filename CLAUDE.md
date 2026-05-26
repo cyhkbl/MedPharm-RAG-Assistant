@@ -1,4 +1,4 @@
-# MedPharm RAG Assistant — 学科知识整合智能体
+# MedDistill — 医学教材知识蒸馏智能体
 
 ## 项目概述
 
@@ -22,23 +22,26 @@
 ## 目录结构
 
 ```
-hackathlon/
+MedDistill/
 ├── CLAUDE.md                    # 本文件 — Claude Code 项目指南
 ├── README.md                    # 项目说明（可复现性）
 ├── .gitignore                   # 排除 PDF、data/、__pycache__ 等
+├── .dockerignore                # Docker 构建排除
 ├── docker-compose.yml           # 一键部署配置
 ├── .env.example                 # 环境变量模板
 ├── requirements.txt             # Python 依赖
 ├── package.json                 # 前端依赖（如有独立前端）
 │
 ├── backend/
-│   ├── main.py                  # FastAPI 入口
+│   ├── main.py                  # FastAPI 入口（含 trace ID 中间件）
 │   ├── config.py                # 配置管理（从 .env 读取）
+│   ├── middleware.py            # API Key 认证中间件
+│   ├── logging_config.py        # 结构化日志配置
 │   ├── api/
-│   │   ├── upload.py            # 文件上传与解析 API
+│   │   ├── upload.py            # 文件上传与解析 API（含 magic bytes 校验）
 │   │   ├── knowledge_graph.py   # 知识图谱构建与查询 API
 │   │   ├── integration.py       # 跨教材整合 API
-│   │   ├── rag.py               # RAG 索引与问答 API
+│   │   ├── rag.py               # RAG 索引（增量）与问答 API
 │   │   ├── dialogue.py          # 多轮对话 API
 │   │   └── report.py            # 整合报告生成 API
 │   ├── core/
@@ -48,22 +51,22 @@ hackathlon/
 │   │   │   ├── txt_parser.py    # TXT 解析
 │   │   │   └── docx_parser.py   # Word 解析（加分）
 │   │   ├── kg/
-│   │   │   ├── extractor.py     # LLM 知识点提取
+│   │   │   ├── extractor.py     # LLM 知识点提取（健壮 JSON 解析）
 │   │   │   ├── graph_builder.py # 知识图谱构建
 │   │   │   ├── aligner.py       # 跨教材语义对齐（Embedding + LLM 双重）
 │   │   │   └── integrator.py    # 整合决策引擎（merge/keep/remove）
 │   │   ├── rag/
-│   │   │   ├── chunker.py       # 文档分块（sliding window）
+│   │   │   ├── chunker.py       # 文档分块（段落感知 + 章节前缀注入）
 │   │   │   ├── embedder.py      # 向量嵌入
 │   │   │   ├── vectorstore.py   # ChromaDB 封装
-│   │   │   ├── retriever.py     # 混合检索（向量 + BM25）
-│   │   │   └── generator.py     # RAG 回答生成
+│   │   │   ├── retriever.py     # 混合检索（向量 + BM25 + 查询扩展）
+│   │   │   └── generator.py     # RAG 回答生成（编号引用解析）
 │   │   └── llm/
-│   │       ├── client.py        # LLM 调用封装（LiteLLM）
+│   │       ├── client.py        # LLM 调用封装（并发控制 + 智能重试）
 │   │       └── prompts.py       # 所有 Prompt 模板
 │   ├── models/
 │   │   ├── schemas.py           # Pydantic 数据模型
-│   │   └── database.py          # 本地数据持久化（SQLite/JSON）
+│   │   └── database.py          # 本地数据持久化（原子写入）
 │   └── utils/
 │       ├── text_utils.py        # 文本清理、计数
 │       └── benchmark.py         # RAG 评测工具
@@ -119,7 +122,7 @@ hackathlon/
 - `GET /api/integrate/stats` — 压缩比统计
 
 ### RAG 问答
-- `POST /api/rag/index` — 建立向量索引
+- `POST /api/rag/index` — 建立/增量更新向量索引（支持 `?force_rebuild=true`）
 - `POST /api/rag/query` — 提问，返回带引用的回答
 - `GET /api/rag/status` — 索引状态
 
@@ -150,10 +153,11 @@ hackathlon/
 - 阈值可调，前端支持用户手动修正
 
 ### 4. RAG Pipeline
-- **分块**：600字/chunk，100字重叠（滑动窗口）
+- **分块**：1000字/chunk，150字重叠，段落感知切分 + 章节标题前缀注入
 - **Embedding**：BGE-small-zh-v1.5（中文优化，本地运行）
-- **检索**：向量 Top-10 + BM25 Top-10 → RRF 融合 → Top-5
-- **生成**：严格 Prompt 约束 — 只用上下文，必须引用来源
+- **检索**：向量 Top-10（含查询扩展）+ BM25 Top-10 → RRF 融合 → Top-5
+- **生成**：严格 Prompt 约束 — 只用上下文，编号引用 [1][2] 映射回来源
+- **索引**：增量更新（content hash 检测变更），支持 `force_rebuild` 全量重建
 
 ### 5. 压缩策略
 - 相似度 ≥ 0.85 的知识点 → merge（保留最完整版本）
@@ -181,7 +185,13 @@ hackathlon/
 LITELLM_API_KEY=sk-lit...2026
 LITELLM_BASE_URL=https://litellm.cyhkbl.qzz.io
 LITELLM_MODEL=mimo-v2.5-pro
+API_KEY=                 # 可选，空=无认证(开发模式)
 ```
+
+### 日志配置
+- 开发模式：人类可读格式（默认）
+- 生产模式：`LOG_FORMAT=json` 启用结构化 JSON 日志
+- 每个请求自动分配 `X-Trace-ID`，可在响应头中查看
 
 ### Claude Code 设置文件
 Claude Code 使用独立的模型配置（与应用本身的 LLM 调用无关）：

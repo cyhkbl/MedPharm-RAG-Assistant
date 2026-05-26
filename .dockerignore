@@ -1,0 +1,39 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+.venv
+venv
+*.egg-info
+
+# Node
+node_modules
+frontend/node_modules
+frontend/dist
+
+# Data (should be mounted as volume, not baked in)
+data/
+
+# IDE
+.vscode
+.idea
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Docs (not needed in image)
+docs/
+report/
+*.md
+!.env.example

@@ -31,22 +31,35 @@ def _format_context(item: dict[str, Any], index: int) -> str:
 
 
 def _build_citations(contexts: list[dict[str, Any]], answer: str) -> list[Citation]:
+    """Build citations by parsing [N] reference markers from the answer.
+
+    The RAG prompt instructs the LLM to cite sources using [1], [2] etc.
+    We extract these markers and map them back to the original context items.
+    """
+    # Find all [N] references in the answer
+    referenced_indices = set()
+    for match in re.finditer(r"\[(\d+)\]", answer):
+        idx = int(match.group(1))
+        if 1 <= idx <= len(contexts):
+            referenced_indices.add(idx)
+
     citations: list[Citation] = []
-    for item in contexts:
+
+    # First pass: add citations that are explicitly referenced in the answer
+    for idx in sorted(referenced_indices):
+        item = contexts[idx - 1]
         metadata = item.get("metadata", {})
-        textbook = str(metadata.get("textbook", ""))
-        chapter = str(metadata.get("chapter", ""))
-        page = int(metadata.get("page", 1) or 1)
-        if textbook and (textbook in answer or chapter in answer or re.search(rf"第{page}页", answer)):
-            citations.append(
-                Citation(
-                    textbook=textbook,
-                    chapter=chapter,
-                    page=page,
-                    relevance_score=float(item.get("score", 0.0)),
-                    source_chunks=[str(item.get("content", ""))],
-                )
+        citations.append(
+            Citation(
+                textbook=str(metadata.get("textbook", "")),
+                chapter=str(metadata.get("chapter", "")),
+                page=int(metadata.get("page", 1) or 1),
+                relevance_score=float(item.get("score", 0.0)),
+                source_chunks=[str(item.get("content", ""))],
             )
+        )
+
+    # Fallback: if no references found, use top-3 contexts
     if not citations:
         for item in contexts[:3]:
             metadata = item.get("metadata", {})
@@ -59,4 +72,5 @@ def _build_citations(contexts: list[dict[str, Any]], answer: str) -> list[Citati
                     source_chunks=[str(item.get("content", ""))],
                 )
             )
+
     return citations

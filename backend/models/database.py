@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -69,9 +72,24 @@ async def _read_json(path: Path, default: Any) -> Any:
 
 
 async def _write_json(path: Path, payload: Any) -> None:
+    """Atomic write: write to a temp file in the same directory, then rename."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    async with aiofiles.open(path, "w", encoding="utf-8") as file:
-        await file.write(json.dumps(payload, ensure_ascii=False, indent=2, default=_json_default))
+    content = json.dumps(payload, ensure_ascii=False, indent=2, default=_json_default)
+
+    # Write to a temp file in the same filesystem (required for atomic rename)
+    fd, tmp_path = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
+    try:
+        async with aiofiles.open(fd, "w", encoding="utf-8", closefd=True) as file:
+            await file.write(content)
+        # Atomic rename (on POSIX systems)
+        shutil.move(tmp_path, str(path))
+    except Exception:
+        # Clean up temp file on failure
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
 
 
 async def save_textbook(textbook: Textbook) -> None:
@@ -79,8 +97,7 @@ async def save_textbook(textbook: Textbook) -> None:
 
     await ensure_data_dirs()
     path = get_data_paths()["parsed"] / f"{textbook.id}.json"
-    async with aiofiles.open(path, "w", encoding="utf-8") as file:
-        await file.write(_model_to_json(textbook))
+    await _write_json(path, textbook.model_dump(mode="json"))
 
 
 async def get_textbook(id: str) -> Textbook | None:

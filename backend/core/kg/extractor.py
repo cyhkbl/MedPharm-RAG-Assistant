@@ -44,15 +44,50 @@ async def extract_knowledge_points(
 
 
 def _extract_json(text: str) -> list[Any]:
+    """Extract JSON array from LLM output with robust fallback parsing."""
     stripped = text.strip()
+    # Remove markdown code fences
     if stripped.startswith("```"):
         stripped = re.sub(r"^```(?:json)?\s*|\s*```$", "", stripped, flags=re.DOTALL)
+        stripped = stripped.strip()
+
+    # Attempt 1: direct parse
     try:
         payload = json.loads(stripped)
+        if isinstance(payload, list):
+            return payload
     except json.JSONDecodeError:
-        match = re.search(r"\[[\s\S]*\]", stripped)
-        payload = json.loads(match.group(0)) if match else []
-    return payload if isinstance(payload, list) else []
+        pass
+
+    # Attempt 2: find the outermost [...] using bracket matching
+    start = stripped.find("[")
+    if start != -1:
+        depth = 0
+        for i in range(start, len(stripped)):
+            if stripped[i] == "[":
+                depth += 1
+            elif stripped[i] == "]":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        payload = json.loads(stripped[start : i + 1])
+                        if isinstance(payload, list):
+                            return payload
+                    except json.JSONDecodeError:
+                        pass
+                    break
+
+    # Attempt 3: try fixing common LLM JSON mistakes (trailing commas, single quotes)
+    try:
+        fixed = re.sub(r",\s*([}\]])", r"\1", stripped[start:] if start != -1 else stripped)
+        fixed = fixed.replace("'", '"')
+        payload = json.loads(fixed)
+        if isinstance(payload, list):
+            return payload
+    except (json.JSONDecodeError, UnboundLocalError):
+        pass
+
+    return []
 
 
 def _node_id(textbook: str, chapter: str, index: int, name: str) -> str:

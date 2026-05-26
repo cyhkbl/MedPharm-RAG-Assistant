@@ -17,6 +17,16 @@ from backend.models.schemas import Textbook
 
 router = APIRouter()
 MAX_UPLOAD_BYTES = 500 * 1024 * 1024
+
+# File type signatures (magic bytes) for validation
+_MAGIC_SIGNATURES: dict[str, list[bytes]] = {
+    ".pdf": [b"%PDF"],
+    ".docx": [b"PK\x03\x04"],  # ZIP-based format
+    ".txt": [],  # text files have no reliable magic bytes
+    ".md": [],
+    ".markdown": [],
+}
+
 PARSERS: dict[str, Callable[[str], Awaitable[dict]]] = {
     ".pdf": parse_pdf,
     ".md": parse_markdown,
@@ -33,7 +43,7 @@ async def upload_textbook(file: UploadFile) -> dict:
     if parser is None:
         raise HTTPException(status_code=400, detail="Unsupported format. Use PDF, MD, TXT, or DOCX.")
 
-    saved_path = await _save_upload(file)
+    saved_path = await _save_upload(file, suffix)
     parsed = await parser(str(saved_path))
     textbook = Textbook.model_validate(parsed)
     await save_textbook(textbook)
@@ -69,11 +79,13 @@ async def remove_textbook(textbook_id: str) -> dict:
     return {"deleted": True, "textbook_id": textbook_id}
 
 
-async def _save_upload(file: UploadFile) -> Path:
+async def _save_upload(file: UploadFile, suffix: str) -> Path:
     filename = Path(file.filename or "upload.bin").name
     target = get_data_paths()["textbooks"] / filename
     target.parent.mkdir(parents=True, exist_ok=True)
     size = 0
+    header_read = False
+
     async with aiofiles.open(target, "wb") as output:
         while chunk := await file.read(1024 * 1024):
             size += len(chunk)
@@ -81,9 +93,31 @@ async def _save_upload(file: UploadFile) -> Path:
                 await output.close()
                 target.unlink(missing_ok=True)
                 raise HTTPException(status_code=413, detail="File too large. Limit is 500MB.")
+
+            # Validate magic bytes on the first chunk
+            if not header_read:
+                header_read = True
+                if not _validate_magic_bytes(chunk, suffix):
+                    await output.close()
+                    target.unlink(missing_ok=True)
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"File content does not match the declared type '{suffix}'. "
+                               "The file may be corrupted or the extension is incorrect.",
+                    )
+
             await output.write(chunk)
     await file.close()
     return target
+
+
+def _validate_magic_bytes(header: bytes, suffix: str) -> bool:
+    """Validate file content against known magic bytes for the given extension."""
+    expected = _MAGIC_SIGNATURES.get(suffix, [])
+    if not expected:
+        # No magic bytes to check (text-based formats)
+        return True
+    return any(header.startswith(sig) for sig in expected)
 
 
 async def _write_textbooks_index() -> None:

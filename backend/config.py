@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     BACKEND_PORT: int = 8100
     FRONTEND_URL: str = "http://localhost:8200"
     DATA_DIR: str = "./data"
+    # API authentication key. Empty = no auth required (dev mode).
+    API_KEY: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",

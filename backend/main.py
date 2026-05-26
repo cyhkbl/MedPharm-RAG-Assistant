@@ -2,46 +2,76 @@ from __future__ import annotations
 
 import importlib
 import logging
+import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from backend.config import get_settings
+from backend.logging_config import generate_trace_id, setup_logging, trace_id_ctx
+from backend.middleware import APIKeyMiddleware
 from backend.models.database import ensure_data_dirs
 
 logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan: startup and shutdown."""
+    setup_logging(
+        structured=os.environ.get("LOG_FORMAT", "").lower() == "json",
+    )
+    await ensure_data_dirs()
+    logger.info("Application started, data directories ensured.")
+    yield
+    logger.info("Application shutting down.")
 
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
 
     settings = get_settings()
+
     app = FastAPI(
-        title="MedPharm RAG Assistant API",
-        description="医学教材知识整合、知识图谱与 RAG 问答后端",
+        title="MedDistill API",
+        description="医学教材知识蒸馏、知识图谱与 RAG 问答后端",
         version="0.1.0",
+        lifespan=lifespan,
     )
 
+    # CORS: use configured FRONTEND_URL instead of wildcard.
+    # allow_credentials requires explicit origins (not "*").
+    allowed_origins = [origin.strip() for origin in settings.FRONTEND_URL.split(",") if origin.strip()]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # 允许所有来源（部署到 Vercel/Railway 需要）
+        allow_origins=allowed_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
 
-    _include_available_routers(app)
+    # API key authentication (skipped if API_KEY is empty)
+    if settings.API_KEY:
+        app.add_middleware(APIKeyMiddleware)
 
-    @app.on_event("startup")
-    async def on_startup() -> None:
-        await ensure_data_dirs()
+    @app.middleware("http")
+    async def add_trace_id(request: Request, call_next):
+        """Assign a trace ID to every request for log correlation."""
+        trace_id = request.headers.get("X-Trace-ID") or generate_trace_id()
+        trace_id_ctx.set(trace_id)
+        response = await call_next(request)
+        response.headers["X-Trace-ID"] = trace_id
+        return response
+
+    _include_available_routers(app)
 
     @app.get("/")
     async def root() -> dict[str, str | list[str]]:
         return {
-            "name": "MedPharm RAG Assistant API",
+            "name": "MedDistill API",
             "version": "0.1.0",
             "status": "running",
             "docs": "/docs",
